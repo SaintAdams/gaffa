@@ -64,11 +64,11 @@
   </style>
 </head>
 <body>
-  <!-- Loading Screen & Fallback -->
+  <!-- Loading Screen -->
   <div id="loading-overlay" class="loading-modal">
     <div class="modal-card">
       <h2>⚽ Gaffer Football Manager</h2>
-      <p id="loading-status" style="margin: 15px 0; color: #94a3b8; font-size: 0.95rem;">Initializing...</p>
+      <p id="loading-status" style="margin: 15px 0; color: #94a3b8; font-size: 0.95rem;">Setting up career...</p>
       
       <div id="local-file-picker" style="display: none; margin-top: 15px; text-align: left; background: #0f172a; padding: 12px; border-radius: 6px;">
         <p style="font-size: 0.8rem; color: #cbd5e1; margin-bottom: 8px;">
@@ -185,7 +185,63 @@
   </div>
 
   <script>
-    // --- BUILT-IN ROBUST CSV PARSER (No external CDN required) ---
+    // --- INDEXEDDB STORAGE (Eliminates quota errors permanently) ---
+    const DB_NAME = 'GafferFM_Database';
+    const STORE_NAME = 'savegame';
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+          }
+        };
+        req.onsuccess = (e) => resolve(e.target.result);
+        req.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    async function dbSave(key, val) {
+      try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(val, key);
+        return new Promise(resolve => {
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (err) {
+        console.warn("Storage warning:", err);
+        return false;
+      }
+    }
+
+    async function dbLoad(key) {
+      try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(key);
+        return new Promise(resolve => {
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
+      } catch (err) {
+        return null;
+      }
+    }
+
+    async function dbClear() {
+      try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).clear();
+        return new Promise(resolve => tx.oncomplete = resolve);
+      } catch (e) {}
+    }
+
+    // --- CSV PARSER ---
     function parseCSV(text) {
       text = text.replace(/^\uFEFF/, '').trim();
       const rows = [];
@@ -230,7 +286,7 @@
       return isNaN(n) ? 0 : n;
     }
 
-    // --- GAME ENGINE CONSTANTS ---
+    // --- GAFFER CONSTANTS & ENGINE ---
     const CFG = {
       baseGoals: 1.3, homeAdv: 1.12, pExp: 3.0, qExp: 1.2, sig: 0.1, gam: 0.3,
       fatigue90: 0.14, normA: 3.45, normM: 4.3222, normD: 6.0667
@@ -449,26 +505,23 @@
         });
       }
 
-      saveGame() {
+      async saveGame() {
         const saveState = {
           year: this.year, week: this.week, userClubId: this.userClubId,
           clubs: this.clubs, players: this.players, lineup: this.lineup,
           bench: this.bench, currentFormation: this.currentFormation,
           fixtures: this.fixtures, news: this.news, bank: this.bank
         };
-        localStorage.setItem("gaffer_fm_save", JSON.stringify(saveState));
+        await dbSave('gaffer_save', saveState);
       }
 
-      loadGame() {
-        const raw = localStorage.getItem("gaffer_fm_save");
-        if (!raw) return false;
+      async loadGame() {
         try {
-          const save = JSON.parse(raw);
-          if (!save.clubs || save.clubs.length === 0) { localStorage.removeItem("gaffer_fm_save"); return false; }
+          const save = await dbLoad('gaffer_save');
+          if (!save || !save.clubs || save.clubs.length === 0) return false;
           Object.assign(this, save);
           return true;
         } catch(e) {
-          localStorage.removeItem("gaffer_fm_save");
           return false;
         }
       }
@@ -477,19 +530,21 @@
     // --- APPLICATION CONTROLLER ---
     const game = new GafferGame();
 
-    // Catch any unexpected runtime error and show it on screen
     window.onerror = function(msg, url, line) {
       document.getElementById('loading-status').innerHTML = 
         `<span style="color:#ef4444; font-weight:bold;">Error: ${msg} (Line ${line})</span>`;
     };
 
-    function clearAndReset() {
-      localStorage.removeItem("gaffer_fm_save");
+    async function clearAndReset() {
+      await dbClear();
+      localStorage.clear();
       location.reload();
     }
 
     async function startApplication() {
-      if (game.loadGame()) {
+      // 1. Try loading existing career from IndexedDB
+      const loaded = await game.loadGame();
+      if (loaded) {
         launchApp();
         return;
       }
@@ -507,7 +562,7 @@
         launchApp();
       } catch (err) {
         document.getElementById('loading-status').innerHTML = 
-          `<span style="color: #ef4444; font-weight: bold;">${err.message}</span><br>If running off your local desktop, select both files below:`;
+          `<span style="color: #ef4444; font-weight: bold;">${err.message}</span><br>If running off your desktop, select both files below:`;
         document.getElementById('local-file-picker').style.display = "block";
       }
     }
@@ -535,7 +590,6 @@
       document.getElementById('loading-overlay').style.display = 'none';
       document.getElementById('app-layout').style.display = 'flex';
       
-      // Populate Club Dropdown
       const select = document.getElementById('user-club-select');
       select.innerHTML = game.clubs.map(c => `<option value="${c.id}" ${c.id === game.userClubId ? 'selected' : ''}>${c.name} (Div ${c.div})</option>`).join('');
 
@@ -634,7 +688,6 @@
       document.getElementById('tab-' + tabId).classList.add('active');
     }
 
-    // Launch
     startApplication();
   </script>
 </body>
