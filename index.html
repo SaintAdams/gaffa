@@ -151,18 +151,24 @@
       }
     }
 
-    // Local file input fallback handler
+   // Local file input fallback handler
     document.getElementById('csv-files-input').addEventListener('change', async (e) => {
-      const files = Array.from(e.target.files);
-      const cFile = files.find(f => f.name.toLowerCase().includes('club'));
-      const pFile = files.find(f => f.name.toLowerCase().includes('player'));
-      if (cFile && pFile) {
-        const cText = await cFile.text();
-        const pText = await pFile.text();
-        await game.loadFromCSVs(cText, pText);
-        launchApp();
-      } else {
-        alert("Please select both Clubs.csv and InitPlayers.csv");
+      try {
+        const files = Array.from(e.target.files);
+        const cFile = files.find(f => f.name.toLowerCase().includes('club'));
+        const pFile = files.find(f => f.name.toLowerCase().includes('player'));
+        if (cFile && pFile) {
+          document.getElementById('loading-status').textContent = "Building 92-club database...";
+          const cText = await cFile.text();
+          const pText = await pFile.text();
+          await game.loadFromCSVs(cText, pText);
+          launchApp();
+        } else {
+          alert("Please select both Clubs.csv and InitPlayers.csv (or Players.csv).");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error loading CSV files: " + err.message);
       }
     });
 
