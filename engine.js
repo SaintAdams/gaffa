@@ -328,9 +328,19 @@ class GafferGame {
   loadGame() {
     const raw = localStorage.getItem("gaffer_fm_save");
     if (!raw) return false;
-    Object.assign(this, JSON.parse(raw));
-    return true;
+    try {
+      const save = JSON.parse(raw);
+      // Validate that the save actually contains clubs and players
+      if (!save.clubs || save.clubs.length === 0 || !save.players || save.players.length === 0) {
+        localStorage.removeItem("gaffer_fm_save");
+        return false;
+      }
+      Object.assign(this, save);
+      return true;
+    } catch (e) {
+      localStorage.removeItem("gaffer_fm_save");
+      return false;
+    }
   }
-}
 
 window.GafferGame = GafferGame;
