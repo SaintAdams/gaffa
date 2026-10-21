@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gaffer: The Football Manager</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Lightweight CSV Parser -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+  <!-- Startup Loading Screen -->
+  <div id="loading-overlay" class="loading-modal">
+    <div class="modal-card">
+      <h2>⚽ Loading Gaffer Football Manager...</h2>
+      <p id="loading-status">Reading Clubs.csv & InitPlayers.csv...</p>
+      
+      <!-- Fallback if opened directly via local file:// protocol -->
+      <div id="local-file-picker" style="display: none; margin-top: 15px;">
+        <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">
+          Opening directly on your local computer? Select both files:
+        </p>
+        <input type="file" id="csv-files-input" multiple accept=".csv" />
+      </div>
+    </div>
+  </div>
+
+  <div class="app-layout" id="app-layout" style="display: none;">
+    <!-- Navigation Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <h2>⚽ GAFFER</h2>
+        <span class="sub">FM 2026/27</span>
+      </div>
+      <nav>
+        <button class="nav-btn active" onclick="switchTab('dashboard')">🏢 Office</button>
+        <button class="nav-btn" onclick="switchTab('tactics')">📋 Tactics & Squad</button>
+        <button class="nav-btn" onclick="switchTab('tables')">🏆 Standings</button>
+        <button class="nav-btn" onclick="switchTab('transfers')">💼 Transfers</button>
+      </nav>
+      <div class="user-status">
+        <strong id="user-club-name">Club Name</strong>
+        <span id="user-balance">Bank: £0m</span>
+      </div>
+    </aside>
+
+    <!-- Main Viewport -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="gameweek-badge" id="gw-badge">Gameweek 0 / 38</div>
+        <button class="btn-primary" id="btn-play-week" onclick="advanceGameweek()">▶ Play Matchweek</button>
+      </header>
+
+      <!-- VIEW 1: DASHBOARD -->
+      <section id="tab-dashboard" class="view-panel active">
+        <div class="dash-grid">
+          <div class="card next-match">
+            <h3>Next Match</h3>
+            <div id="next-fixture-card" class="fixture-box">No Fixture</div>
+          </div>
+          <div class="card news-card">
+            <h3>Club Feed & News</h3>
+            <ul id="news-feed" class="news-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: TACTICS & PITCH -->
+      <section id="tab-tactics" class="view-panel">
+        <div class="tactics-container">
+          <div class="pitch-side">
+            <div class="controls-row">
+              <label>Formation: </label>
+              <select id="formation-select" onchange="changeFormation(this.value)">
+                <option value="4-3-3">4-3-3</option>
+                <option value="4-4-2">4-4-2</option>
+                <option value="4-2-3-1">4-2-3-1</option>
+                <option value="3-5-2">3-5-2</option>
+                <option value="5-3-2">5-3-2</option>
+              </select>
+              <button class="btn-secondary" onclick="autoPickSquad()">Auto-Pick Best XI</button>
+            </div>
+            <div class="pitch-field" id="pitch-board"></div>
+          </div>
+          <div class="bench-side card">
+            <h3>Substitutes (Max 9)</h3>
+            <ul id="bench-list" class="squad-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 3: TABLES -->
+      <section id="tab-tables" class="view-panel">
+        <div class="card">
+          <div class="table-actions">
+            <button class="pill active" onclick="renderTable(1)">Premier League</button>
+            <button class="pill" onclick="renderTable(2)">Championship</button>
+            <button class="pill" onclick="renderTable(3)">League One</button>
+            <button class="pill" onclick="renderTable(4)">League Two</button>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>Pos</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VIEW 4: TRANSFERS -->
+      <section id="tab-transfers" class="view-panel">
+        <div class="card">
+          <h3>Squad List & Player Search</h3>
+          <table class="data-table">
+            <thead>
+              <tr><th>Name</th><th>Pos</th><th>Age</th><th>OVR</th><th>POT</th><th>Value</th><th>Wage</th></tr>
+            </thead>
+            <tbody id="transfer-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="engine.js"></script>
+  <script>
+    const game = new GafferGame();
+
+    async function startApplication() {
+      // 1. Try loading existing save
+      if (game.loadGame()) {
+        launchApp();
+        return;
+      }
+
+      // 2. Try fetching Clubs.csv and InitPlayers.csv directly (Works on GitHub Pages)
+      try {
+        const [cRes, pRes] = await Promise.all([
+          fetch('Clubs.csv'),
+          fetch('InitPlayers.csv')
+        ]);
+        if (!cRes.ok || !pRes.ok) throw new Error("CSV Fetch failed");
+        const cText = await cRes.text();
+        const pText = await pRes.text();
+        await game.loadFromCSVs(cText, pText);
+        launchApp();
+      } catch (err) {
+        // Fallback for double-clicking HTML locally
+        document.getElementById('loading-status').textContent = "Running locally? Please select Clubs.csv and InitPlayers.csv:";
+        document.getElementById('local-file-picker').style.display = "block";
+      }
+    }
+
+    // Local file input fallback handler
+    document.getElementById('csv-files-input').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      const cFile = files.find(f => f.name.toLowerCase().includes('club'));
+      const pFile = files.find(f => f.name.toLowerCase().includes('player'));
+      if (cFile && pFile) {
+        const cText = await cFile.text();
+        const pText = await pFile.text();
+        await game.loadFromCSVs(cText, pText);
+        launchApp();
+      } else {
+        alert("Please select both Clubs.csv and InitPlayers.csv");
+      }
+    });
+
+    function launchApp() {
+      document.getElementById('loading-overlay').style.display = 'none';
+      document.getElementById('app-layout').style.display = 'flex';
+      updateUI();
+    }
+
+    function updateUI() {
+      const club = game.clubs.find(c => c.id === game.userClubId) || game.clubs[0];
+      document.getElementById('user-club-name').textContent = club.name;
+      document.getElementById('user-balance').textContent = `Bank: £${(game.bank / 1000000).toFixed(2)}m`;
+      document.getElementById('gw-badge').textContent = `Gameweek ${game.week} / 38 (Season ${game.year})`;
+
+      // Render News
+      const feed = document.getElementById('news-feed');
+      feed.innerHTML = game.news.slice(0, 8).map(n => `<li>${n}</li>`).join('');
+
+      // Render Next Match
+      const nextMatch = game.fixtures.find(f => f.week === game.week + 1 && (f.homeId === game.userClubId || f.awayId === game.userClubId));
+      if (nextMatch) {
+        const h = game.clubs.find(c => c.id === nextMatch.homeId).name;
+        const a = game.clubs.find(c => c.id === nextMatch.awayId).name;
+        document.getElementById('next-fixture-card').innerHTML = `<strong>${h}</strong> vs <strong>${a}</strong>`;
+      } else {
+        document.getElementById('next-fixture-card').textContent = "Season Completed";
+      }
+
+      renderPitch();
+      renderTable(1);
+      renderTransfers();
+    }
+
+    function renderPitch() {
+      const pitch = document.getElementById('pitch-board');
+      pitch.innerHTML = '';
+      const formDef = game.formations.find(f => f.name === game.currentFormation) || game.formations[0];
+      
+      game.lineup.forEach((pId, idx) => {
+        const player = game.players.find(p => p.id === pId);
+        if (!player) return;
+        const slot = formDef.slots[idx] || "CM";
+        const card = document.createElement('div');
+        card.className = 'player-node';
+        card.innerHTML = `<span class="slot">${slot}</span><strong>${player.name}</strong><span class="ovr">${player.ovr}</span>`;
+        pitch.appendChild(card);
+      });
+
+      const bList = document.getElementById('bench-list');
+      bList.innerHTML = game.bench.map(id => {
+        const p = game.players.find(x => x.id === id);
+        return p ? `<li><strong>${p.pos}</strong> ${p.name} (OVR: ${p.ovr})</li>` : '';
+      }).join('');
+    }
+
+    function renderTable(divId) {
+      document.querySelectorAll('.pill').forEach((p, idx) => p.classList.toggle('active', idx + 1 === divId));
+      const sorted = game.clubs.filter(c => c.div === divId).sort((a,b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga));
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = sorted.map((c, i) => `
+        <tr class="${c.id === game.userClubId ? 'highlight' : ''}">
+          <td>${i + 1}</td><td>${c.name}</td><td>${c.p}</td><td>${c.w}</td><td>${c.d}</td><td>${c.l}</td><td>${c.gf - c.ga}</td><td><strong>${c.pts}</strong></td>
+        </tr>
+      `).join('');
+    }
+
+    function renderTransfers() {
+      const userPlayers = game.players.filter(p => p.cid === game.userClubId);
+      const tbody = document.getElementById('transfer-body');
+      tbody.innerHTML = userPlayers.map(p => `
+        <tr>
+          <td><strong>${p.name}</strong></td><td>${p.pos}</td><td>${p.age}</td>
+          <td>${p.ovr}</td><td>${p.pot}</td><td>£${(p.val / 1000000).toFixed(2)}m</td><td>£${p.wage.toLocaleString()}</td>
+        </tr>
+      `).join('');
+    }
+
+    function advanceGameweek() {
+      game.playMatchweek();
+      updateUI();
+    }
+
+    function changeFormation(val) {
+      game.currentFormation = val;
+      renderPitch();
+    }
+
+    function autoPickSquad() {
+      game.autoPickLineup(game.userClubId);
+      renderPitch();
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tabId).classList.add('active');
+    }
+
+    startApplication();
+  </script>
+</body>
+</html>
