@@ -3,61 +3,117 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gaffer: The Football Manager</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <title>Gaffer: The Football Manager (2026/27)</title>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --panel-bg: #1e293b;
+      --accent: #10b981;
+      --accent-hover: #059669;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --pitch: #15803d;
+      --pitch-line: rgba(255, 255, 255, 0.25);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg-dark); color: var(--text); height: 100vh; overflow: hidden; }
+
+    .loading-modal { position: fixed; inset: 0; background: var(--bg-dark); display: flex; align-items: center; justify-content: center; z-index: 999; }
+    .modal-card { background: var(--panel-bg); padding: 35px; border-radius: 12px; border: 1px solid #334155; text-align: center; max-width: 450px; width: 90%; }
+
+    .app-layout { display: flex; height: 100vh; }
+    .sidebar { width: 260px; background: #0b1120; border-right: 1px solid #334155; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; }
+    .brand h2 { color: var(--accent); }
+    .nav-btn { width: 100%; padding: 12px; margin-top: 8px; background: transparent; border: none; color: var(--text-muted); text-align: left; font-size: 1rem; cursor: pointer; border-radius: 6px; }
+    .nav-btn.active, .nav-btn:hover { background: var(--panel-bg); color: var(--text); }
+    .user-status { border-top: 1px solid #334155; padding-top: 15px; display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
+
+    .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+    .topbar { background: var(--panel-bg); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+    .btn-primary { background: var(--accent); color: white; border: none; padding: 10px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: #334155; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+
+    .view-panel { display: none; padding: 30px; }
+    .view-panel.active { display: block; }
+
+    .card { background: var(--panel-bg); padding: 20px; border-radius: 8px; border: 1px solid #334155; }
+    .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .fixture-box { font-size: 1.25rem; margin-top: 15px; color: var(--accent); }
+    .news-list { margin-top: 10px; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; color: var(--text-muted); }
+
+    .tactics-container { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+    .controls-row { display: flex; gap: 15px; align-items: center; }
+    .controls-row select { background: var(--panel-bg); color: white; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; }
+
+    .pitch-field {
+      height: 520px; background: var(--pitch); border-radius: 8px; border: 2px solid var(--pitch-line);
+      margin-top: 15px; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr);
+      padding: 20px; gap: 10px; align-items: center; justify-items: center;
+    }
+    .player-node { background: rgba(15, 23, 42, 0.92); border: 1px solid var(--accent); padding: 8px 12px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; font-size: 0.8rem; }
+    .player-node .slot { font-size: 0.65rem; color: var(--accent); }
+    .player-node .ovr { font-weight: bold; font-size: 1rem; }
+    .squad-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-top: 15px; font-size: 0.85rem; }
+
+    .data-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    .data-table th, .data-table td { padding: 10px; text-align: left; border-bottom: 1px solid #334155; }
+    .data-table tr.highlight { background: rgba(16, 185, 129, 0.15); font-weight: bold; }
+    .pill { background: transparent; border: 1px solid #334155; color: var(--text-muted); padding: 6px 14px; border-radius: 20px; cursor: pointer; margin-right: 8px; }
+    .pill.active { background: var(--accent); color: white; border-color: var(--accent); }
+  </style>
 </head>
 <body>
-  <!-- Startup Loading Screen -->
+  <!-- Loading Screen & Fallback -->
   <div id="loading-overlay" class="loading-modal">
     <div class="modal-card">
-      <h2>⚽ Loading Gaffer Football Manager...</h2>
-      <p id="loading-status" style="margin-top: 10px; color: #94a3b8;">Reading data...</p>
+      <h2>⚽ Gaffer Football Manager</h2>
+      <p id="loading-status" style="margin: 15px 0; color: #94a3b8; font-size: 0.95rem;">Initializing...</p>
       
-      <!-- Local file fallback -->
-      <div id="local-file-picker" style="display: none; margin-top: 15px;">
-        <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">
-          Opening directly on your local computer? Select both files:
+      <div id="local-file-picker" style="display: none; margin-top: 15px; text-align: left; background: #0f172a; padding: 12px; border-radius: 6px;">
+        <p style="font-size: 0.8rem; color: #cbd5e1; margin-bottom: 8px;">
+          Opening directly on your computer? Select <strong>Clubs.csv</strong> & <strong>InitPlayers.csv</strong>:
         </p>
-        <input type="file" id="csv-files-input" multiple accept=".csv" />
+        <input type="file" id="csv-files-input" multiple accept=".csv" style="font-size: 0.8rem; color: #94a3b8;" />
       </div>
 
-      <!-- Emergency Reset Button -->
       <div style="margin-top: 20px;">
         <button onclick="clearAndReset()" style="background: #334155; color: #94a3b8; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">
-          Clear Cache & Hard Reset
+          Clear Cache & Reset
         </button>
       </div>
     </div>
   </div>
 
+  <!-- Main Game Layout -->
   <div class="app-layout" id="app-layout" style="display: none;">
-    <!-- Navigation Sidebar -->
     <aside class="sidebar">
-      <div class="brand">
-        <h2>⚽ GAFFER</h2>
-        <span class="sub">FM 2026/27</span>
+      <div>
+        <div class="brand">
+          <h2>⚽ GAFFER</h2>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">2026/27 Engine</span>
+        </div>
+        <nav style="margin-top: 20px;">
+          <button class="nav-btn active" onclick="switchTab('dashboard')">🏢 Office</button>
+          <button class="nav-btn" onclick="switchTab('tactics')">📋 Tactics & Squad</button>
+          <button class="nav-btn" onclick="switchTab('tables')">🏆 Standings</button>
+          <button class="nav-btn" onclick="switchTab('transfers')">💼 Squad Roster</button>
+        </nav>
       </div>
-      <nav>
-        <button class="nav-btn active" onclick="switchTab('dashboard')">🏢 Office</button>
-        <button class="nav-btn" onclick="switchTab('tactics')">📋 Tactics & Squad</button>
-        <button class="nav-btn" onclick="switchTab('tables')">🏆 Standings</button>
-        <button class="nav-btn" onclick="switchTab('transfers')">💼 Transfers</button>
-      </nav>
       <div class="user-status">
-        <strong id="user-club-name">Club Name</strong>
-        <span id="user-balance">Bank: £0m</span>
+        <label style="font-size: 0.75rem; color: var(--text-muted);">Current Club:</label>
+        <select id="user-club-select" onchange="changeUserClub(Number(this.value))" style="background: var(--panel-bg); color: white; border: 1px solid #334155; padding: 4px; border-radius: 4px; font-size: 0.85rem;"></select>
+        <span id="user-balance" style="margin-top: 4px; font-weight: bold; color: var(--accent);">Bank: £0m</span>
       </div>
     </aside>
 
-    <!-- Main Viewport -->
     <main class="main-content">
       <header class="topbar">
-        <div class="gameweek-badge" id="gw-badge">Gameweek 0 / 38</div>
-        <button class="btn-primary" id="btn-play-week" onclick="advanceGameweek()">▶ Play Matchweek</button>
+        <div class="gameweek-badge" id="gw-badge" style="font-weight: bold; font-size: 1.1rem;">Gameweek 0 / 38</div>
+        <button class="btn-primary" onclick="advanceGameweek()">▶ Play Matchweek</button>
       </header>
 
-      <!-- VIEW 1: DASHBOARD -->
+      <!-- Office Tab -->
       <section id="tab-dashboard" class="view-panel active">
         <div class="dash-grid">
           <div class="card next-match">
@@ -65,13 +121,13 @@
             <div id="next-fixture-card" class="fixture-box">No Fixture</div>
           </div>
           <div class="card news-card">
-            <h3>Club Feed & News</h3>
+            <h3>Club Feed & Results</h3>
             <ul id="news-feed" class="news-list"></ul>
           </div>
         </div>
       </section>
 
-      <!-- VIEW 2: TACTICS & PITCH -->
+      <!-- Tactics Tab -->
       <section id="tab-tactics" class="view-panel">
         <div class="tactics-container">
           <div class="pitch-side">
@@ -95,7 +151,7 @@
         </div>
       </section>
 
-      <!-- VIEW 3: TABLES -->
+      <!-- Standings Tab -->
       <section id="tab-tables" class="view-panel">
         <div class="card">
           <div class="table-actions">
@@ -113,10 +169,10 @@
         </div>
       </section>
 
-      <!-- VIEW 4: TRANSFERS -->
+      <!-- Roster Tab -->
       <section id="tab-transfers" class="view-panel">
         <div class="card">
-          <h3>Squad List & Player Search</h3>
+          <h3>Squad List & Player Attributes</h3>
           <table class="data-table">
             <thead>
               <tr><th>Name</th><th>Pos</th><th>Age</th><th>OVR</th><th>POT</th><th>Value</th><th>Wage</th></tr>
@@ -128,9 +184,304 @@
     </main>
   </div>
 
-  <script src="engine.js"></script>
   <script>
+    // --- BUILT-IN ROBUST CSV PARSER (No external CDN required) ---
+    function parseCSV(text) {
+      text = text.replace(/^\uFEFF/, '').trim();
+      const rows = [];
+      let row = [];
+      let token = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        const next = text[i + 1];
+        if (inQuotes) {
+          if (c === '"' && next === '"') { token += '"'; i++; }
+          else if (c === '"') { inQuotes = false; }
+          else { token += c; }
+        } else {
+          if (c === '"') { inQuotes = true; }
+          else if (c === ',') { row.push(token.trim()); token = ''; }
+          else if (c === '\r') {}
+          else if (c === '\n') { row.push(token.trim()); rows.push(row); row = []; token = ''; }
+          else { token += c; }
+        }
+      }
+      if (token.length > 0 || row.length > 0) { row.push(token.trim()); rows.push(row); }
+      if (rows.length < 2) return [];
+      const headers = rows[0].map(h => h.replace(/^[\uFEFF"]+|["]+$/g, '').trim());
+      const data = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (r.length < 2) continue;
+        const obj = {};
+        for (let j = 0; j < headers.length; j++) {
+          obj[headers[j]] = r[j] !== undefined ? r[j] : '';
+        }
+        data.push(obj);
+      }
+      return data;
+    }
+
+    function cleanNumber(val) {
+      if (val === null || val === undefined) return 0;
+      const s = String(val).replace(/[£,\s]/g, '');
+      const n = Number(s);
+      return isNaN(n) ? 0 : n;
+    }
+
+    // --- GAME ENGINE CONSTANTS ---
+    const CFG = {
+      baseGoals: 1.3, homeAdv: 1.12, pExp: 3.0, qExp: 1.2, sig: 0.1, gam: 0.3,
+      fatigue90: 0.14, normA: 3.45, normM: 4.3222, normD: 6.0667
+    };
+
+    const SLOT_WEIGHTS = {
+      GK:  { w: [0.85, 0, 0.05, 0, 0, 0.1], c: [0, 0, 1.6] },
+      RB:  { w: [0, 0.4, 0.15, 0.05, 0.25, 0.15], c: [0.15, 0.3, 0.7] },
+      LB:  { w: [0, 0.4, 0.15, 0.05, 0.25, 0.15], c: [0.15, 0.3, 0.7] },
+      CB:  { w: [0, 0.55, 0.1, 0, 0.1, 0.25], c: [0, 0.1, 1.0] },
+      DM:  { w: [0, 0.4, 0.3, 0.05, 0.05, 0.2], c: [0.05, 0.8, 0.5] },
+      CM:  { w: [0, 0.2, 0.4, 0.15, 0.1, 0.15], c: [0.25, 1.0, 0.2] },
+      AM:  { w: [0, 0.05, 0.35, 0.35, 0.2, 0.05], c: [0.65, 0.8, 0] },
+      RM:  { w: [0, 0.1, 0.3, 0.25, 0.3, 0.05], c: [0.5, 0.6, 0.2] },
+      LM:  { w: [0, 0.1, 0.3, 0.25, 0.3, 0.05], c: [0.5, 0.6, 0.2] },
+      RW:  { w: [0, 0.05, 0.25, 0.3, 0.35, 0.05], c: [0.85, 0.3, 0] },
+      LW:  { w: [0, 0.05, 0.25, 0.3, 0.35, 0.05], c: [0.85, 0.3, 0] },
+      ST:  { w: [0, 0, 0.1, 0.5, 0.2, 0.2], c: [1.0, 0.1, 0] }
+    };
+
+    const FORMATIONS = [
+      { name: "4-4-2", slots: ["GK","RB","CB","CB","LB","RM","CM","CM","LM","ST","ST"], bal: 0.9969 },
+      { name: "4-3-3", slots: ["GK","RB","CB","CB","LB","DM","CM","CM","RW","LW","ST"], bal: 1.0004 },
+      { name: "4-2-3-1", slots: ["GK","RB","CB","CB","LB","DM","DM","RW","AM","LW","ST"], bal: 1.0011 },
+      { name: "3-5-2", slots: ["GK","CB","CB","CB","RM","DM","CM","CM","LM","ST","ST"], bal: 0.9965 },
+      { name: "5-3-2", slots: ["GK","RB","CB","CB","CB","LB","CM","CM","CM","ST","ST"], bal: 1.0087 }
+    ];
+
+    class GafferGame {
+      constructor() {
+        this.year = 2026;
+        this.week = 0;
+        this.userClubId = 1;
+        this.clubs = [];
+        this.players = [];
+        this.formations = FORMATIONS;
+        this.lineup = [];
+        this.bench = [];
+        this.currentFormation = "4-3-3";
+        this.fixtures = [];
+        this.news = [];
+        this.bank = 5000000;
+      }
+
+      loadFromCSVs(clubsCSVText, playersCSVText) {
+        const rawClubs = parseCSV(clubsCSVText);
+        const rawPlayers = parseCSV(playersCSVText);
+
+        this.clubs = rawClubs.map(r => ({
+          id: cleanNumber(r['ID'] || r['\ufeffID']),
+          name: r['Club'] ? r['Club'].trim() : '',
+          div: cleanNumber(r['Division (1 PL, 2 Champ, 3 L1, 4 L2)']),
+          budget: cleanNumber(r['Init budget']),
+          wageBudget: cleanNumber(r['Wage budget /wk']),
+          formation: r['Formation'] ? r['Formation'].trim() : '4-4-2',
+          last: r['Init last'] || 'PL 1st',
+          capacity: cleanNumber(r['Stadium capacity']),
+          usualAtt: cleanNumber(r['Init attendance']),
+          p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0
+        })).filter(c => c.id > 0);
+
+        this.players = rawPlayers.map(r => ({
+          id: cleanNumber(r['ID'] || r['\ufeffID']),
+          name: r['Player'] ? r['Player'].trim() : '',
+          club: r['Club'] ? r['Club'].trim() : 'Free Agent',
+          cid: cleanNumber(r['Club ID']),
+          pos: r['Pos'] ? r['Pos'].trim() : 'CM',
+          pos2: r['Pos2'] ? r['Pos2'].trim() : '',
+          age: cleanNumber(r['Age']) || 20,
+          ovr: cleanNumber(r['OVR']) || 60,
+          gk: cleanNumber(r['GK']), def: cleanNumber(r['DEF']), pas: cleanNumber(r['PAS']),
+          att: cleanNumber(r['ATT']), pac: cleanNumber(r['PAC']), phy: cleanNumber(r['PHY']),
+          pot: cleanNumber(r['POT']) || 65,
+          val: cleanNumber(r['Value']),
+          wage: cleanNumber(r['Wage /wk']),
+          inj: 0, apps: 0, gls: 0, ast: 0
+        })).filter(p => p.id > 0);
+
+        this.initSeason();
+      }
+
+      initSeason() {
+        this.generateDoubleRoundRobin();
+        this.autoPickLineup(this.userClubId);
+        this.news = [`Season ${this.year}/${(this.year + 1).toString().slice(-2)} is underway! Transfer window is open.`];
+        this.saveGame();
+      }
+
+      gaussian() {
+        let u = 0, v = 0;
+        while (u === 0) u = Math.random();
+        while (v === 0) v = Math.random();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+
+      poisson(lambda) {
+        const l = Math.exp(-lambda);
+        let k = 0, p = 1.0;
+        do { k++; p *= Math.random(); } while (p > l && k < 10);
+        return k - 1;
+      }
+
+      getPlayerSlotRating(player, slotKey) {
+        const slot = SLOT_WEIGHTS[slotKey] || SLOT_WEIGHTS.CM;
+        const stats = [player.gk, player.def, player.pas, player.att, player.pac, player.phy];
+        let base = 0;
+        for (let i = 0; i < 6; i++) base += stats[i] * slot.w[i];
+        let fam = (player.pos === slotKey) ? 1.0 : (player.pos2 === slotKey ? 0.95 : 0.85);
+        if (slotKey === "GK" && player.pos !== "GK") fam = 0.2;
+        return base * fam;
+      }
+
+      calculateTeamStrength(clubId) {
+        const club = this.clubs.find(c => c.id === clubId);
+        const formDef = this.formations.find(f => f.name === (clubId === this.userClubId ? this.currentFormation : club.formation)) || this.formations[0];
+        let sA = 0, sM = 0, sD = 0, wA = 0, wM = 0, wD = 0;
+
+        let squadXI = [];
+        if (clubId === this.userClubId && this.lineup.length === 11) {
+          squadXI = this.lineup.map(id => this.players.find(p => p.id === id)).filter(Boolean);
+        } else {
+          squadXI = this.players.filter(p => p.cid === clubId && p.inj === 0).slice(0, 11);
+        }
+
+        squadXI.forEach((player, idx) => {
+          const slotKey = formDef.slots[idx] || "CM";
+          const slot = SLOT_WEIGHTS[slotKey] || SLOT_WEIGHTS.CM;
+          const rat = this.getPlayerSlotRating(player, slotKey);
+          sA += rat * slot.c[0]; sM += rat * slot.c[1]; sD += rat * slot.c[2];
+          wA += slot.c[0]; wM += slot.c[1]; wD += slot.c[2];
+        });
+
+        return {
+          att: formDef.bal * (sA / (wA || 1)) * Math.pow(wA / CFG.normA, CFG.gam),
+          mid: formDef.bal * (sM / (wM || 1)) * Math.pow(wM / CFG.normM, CFG.gam),
+          def: formDef.bal * (sD / (wD || 1)) * Math.pow(wD / CFG.normD, CFG.gam)
+        };
+      }
+
+      simulateMatch(homeId, awayId) {
+        const homeStr = this.calculateTeamStrength(homeId);
+        const awayStr = this.calculateTeamStrength(awayId);
+        const homeForm = Math.exp(CFG.sig * this.gaussian());
+        const awayForm = Math.exp(CFG.sig * this.gaussian());
+
+        let lambdaH = Math.min(6.0, Math.max(0.1, CFG.baseGoals * CFG.homeAdv *
+          Math.pow(homeStr.att / awayStr.def, CFG.pExp) * Math.pow(homeStr.mid / awayStr.mid, CFG.qExp) * homeForm));
+        let lambdaA = Math.min(6.0, Math.max(0.1, (CFG.baseGoals / CFG.homeAdv) *
+          Math.pow(awayStr.att / homeStr.def, CFG.pExp) * Math.pow(awayStr.mid / homeStr.mid, CFG.qExp) * awayForm));
+
+        return { homeGoals: this.poisson(lambdaH), awayGoals: this.poisson(lambdaA) };
+      }
+
+      playMatchweek() {
+        this.week++;
+        const currentFixtures = this.fixtures.filter(f => f.week === this.week);
+        
+        currentFixtures.forEach(fix => {
+          const res = this.simulateMatch(fix.homeId, fix.awayId);
+          fix.homeGoals = res.homeGoals;
+          fix.awayGoals = res.awayGoals;
+          fix.played = true;
+
+          const hClub = this.clubs.find(c => c.id === fix.homeId);
+          const aClub = this.clubs.find(c => c.id === fix.awayId);
+          hClub.p++; aClub.p++;
+          hClub.gf += res.homeGoals; hClub.ga += res.awayGoals;
+          aClub.gf += res.awayGoals; aClub.ga += res.homeGoals;
+
+          if (res.homeGoals > res.awayGoals) { hClub.w++; aClub.l++; hClub.pts += 3; }
+          else if (res.awayGoals > res.homeGoals) { aClub.w++; hClub.l++; aClub.pts += 3; }
+          else { hClub.d++; aClub.d++; hClub.pts += 1; aClub.pts += 1; }
+        });
+
+        const userMatch = currentFixtures.find(f => f.homeId === this.userClubId || f.awayId === this.userClubId);
+        if (userMatch) {
+          const isHome = userMatch.homeId === this.userClubId;
+          const userClub = this.clubs.find(c => c.id === this.userClubId);
+          const opponent = this.clubs.find(c => c.id === (isHome ? userMatch.awayId : userMatch.homeId));
+          const score = isHome ? `${userMatch.homeGoals}-${userMatch.awayGoals}` : `${userMatch.awayGoals}-${userMatch.homeGoals}`;
+          this.news.unshift(`GW ${this.week}: ${userClub.name} ${score} vs ${opponent.name}`);
+
+          if (isHome) {
+            const gate = Math.round(userClub.usualAtt * 35);
+            this.bank += gate;
+            this.news.unshift(`Gate Receipts: +£${gate.toLocaleString()}`);
+          }
+        }
+        this.saveGame();
+      }
+
+      autoPickLineup(clubId) {
+        const clubPlayers = this.players.filter(p => p.cid === clubId && p.inj === 0);
+        clubPlayers.sort((a, b) => b.ovr - a.ovr);
+        const gk = clubPlayers.find(p => p.pos === "GK") || clubPlayers[0];
+        const outfield = clubPlayers.filter(p => p.id !== gk.id);
+        this.lineup = [gk.id, ...outfield.slice(0, 10).map(p => p.id)];
+        this.bench = outfield.slice(10, 19).map(p => p.id);
+      }
+
+      generateDoubleRoundRobin() {
+        this.fixtures = [];
+        [1, 2, 3, 4].forEach(div => {
+          const divClubs = this.clubs.filter(c => c.div === div).map(c => c.id);
+          const n = divClubs.length;
+          const rounds = n - 1;
+          for (let r = 0; r < rounds; r++) {
+            for (let i = 0; i < n / 2; i++) {
+              const home = (r % 2 === 0) ? divClubs[i] : divClubs[n - 1 - i];
+              const away = (r % 2 === 0) ? divClubs[n - 1 - i] : divClubs[i];
+              this.fixtures.push({ week: r + 1, div, homeId: home, awayId: away, played: false, homeGoals: null, awayGoals: null });
+              this.fixtures.push({ week: r + 1 + rounds, div, homeId: away, awayId: home, played: false, homeGoals: null, awayGoals: null });
+            }
+            divClubs.splice(1, 0, divClubs.pop());
+          }
+        });
+      }
+
+      saveGame() {
+        const saveState = {
+          year: this.year, week: this.week, userClubId: this.userClubId,
+          clubs: this.clubs, players: this.players, lineup: this.lineup,
+          bench: this.bench, currentFormation: this.currentFormation,
+          fixtures: this.fixtures, news: this.news, bank: this.bank
+        };
+        localStorage.setItem("gaffer_fm_save", JSON.stringify(saveState));
+      }
+
+      loadGame() {
+        const raw = localStorage.getItem("gaffer_fm_save");
+        if (!raw) return false;
+        try {
+          const save = JSON.parse(raw);
+          if (!save.clubs || save.clubs.length === 0) { localStorage.removeItem("gaffer_fm_save"); return false; }
+          Object.assign(this, save);
+          return true;
+        } catch(e) {
+          localStorage.removeItem("gaffer_fm_save");
+          return false;
+        }
+      }
+    }
+
+    // --- APPLICATION CONTROLLER ---
     const game = new GafferGame();
+
+    // Catch any unexpected runtime error and show it on screen
+    window.onerror = function(msg, url, line) {
+      document.getElementById('loading-status').innerHTML = 
+        `<span style="color:#ef4444; font-weight:bold;">Error: ${msg} (Line ${line})</span>`;
+    };
 
     function clearAndReset() {
       localStorage.removeItem("gaffer_fm_save");
@@ -138,37 +489,29 @@
     }
 
     async function startApplication() {
+      if (game.loadGame()) {
+        launchApp();
+        return;
+      }
+
+      document.getElementById('loading-status').textContent = "Downloading 92 clubs & 2,676 players...";
       try {
-        // 1. Try loading a valid existing save
-        if (game.loadGame()) {
-          launchApp();
-          return;
-        }
-
-        // 2. Fetch CSVs over network (GitHub Pages)
-        document.getElementById('loading-status').textContent = "Downloading 92 clubs & 2,676 players...";
         const [cRes, pRes] = await Promise.all([
-          fetch('Clubs.csv?v=' + Date.now()),
-          fetch('InitPlayers.csv?v=' + Date.now())
+          fetch('Clubs.csv?t=' + Date.now()),
+          fetch('InitPlayers.csv?t=' + Date.now())
         ]);
-
-        if (!cRes.ok || !pRes.ok) {
-          throw new Error("Could not automatically fetch CSVs (HTTP " + cRes.status + "/" + pRes.status + ")");
-        }
-
+        if (!cRes.ok || !pRes.ok) throw new Error("Could not load CSV files over network (HTTP " + cRes.status + ")");
         const cText = await cRes.text();
         const pText = await pRes.text();
-        await game.loadFromCSVs(cText, pText);
+        game.loadFromCSVs(cText, pText);
         launchApp();
       } catch (err) {
-        console.error(err);
         document.getElementById('loading-status').innerHTML = 
-          `<span style="color:#ef4444; font-weight:bold;">Error: ${err.message}</span><br>If running on your desktop, select both files below:`;
+          `<span style="color: #ef4444; font-weight: bold;">${err.message}</span><br>If running off your local desktop, select both files below:`;
         document.getElementById('local-file-picker').style.display = "block";
       }
     }
 
-    // Local file input fallback handler
     document.getElementById('csv-files-input').addEventListener('change', async (e) => {
       try {
         const files = Array.from(e.target.files);
@@ -178,36 +521,43 @@
           document.getElementById('loading-status').textContent = "Parsing CSVs...";
           const cText = await cFile.text();
           const pText = await pFile.text();
-          await game.loadFromCSVs(cText, pText);
+          game.loadFromCSVs(cText, pText);
           launchApp();
         } else {
           alert("Please select both Clubs.csv and InitPlayers.csv");
         }
       } catch (err) {
-        console.error(err);
-        document.getElementById('loading-status').innerHTML = 
-          `<span style="color:#ef4444; font-weight:bold;">Error parsing files: ${err.message}</span>`;
+        document.getElementById('loading-status').innerHTML = `<span style="color:#ef4444;">${err.message}</span>`;
       }
     });
 
     function launchApp() {
       document.getElementById('loading-overlay').style.display = 'none';
       document.getElementById('app-layout').style.display = 'flex';
+      
+      // Populate Club Dropdown
+      const select = document.getElementById('user-club-select');
+      select.innerHTML = game.clubs.map(c => `<option value="${c.id}" ${c.id === game.userClubId ? 'selected' : ''}>${c.name} (Div ${c.div})</option>`).join('');
+
+      updateUI();
+    }
+
+    function changeUserClub(newId) {
+      game.userClubId = newId;
+      game.autoPickLineup(newId);
+      game.saveGame();
       updateUI();
     }
 
     function updateUI() {
-      if (!game.clubs || game.clubs.length === 0) return;
       const club = game.clubs.find(c => c.id === game.userClubId) || game.clubs[0];
-      document.getElementById('user-club-name').textContent = club.name;
       document.getElementById('user-balance').textContent = `Bank: £${(game.bank / 1000000).toFixed(2)}m`;
       document.getElementById('gw-badge').textContent = `Gameweek ${game.week} / 38 (Season ${game.year})`;
 
-      // Render News
-      const feed = document.getElementById('news-feed');
-      feed.innerHTML = (game.news || []).slice(0, 8).map(n => `<li>${n}</li>`).join('');
+      // News Feed
+      document.getElementById('news-feed').innerHTML = (game.news || []).slice(0, 8).map(n => `<li>${n}</li>`).join('');
 
-      // Render Next Match
+      // Next Match
       const nextMatch = (game.fixtures || []).find(f => f.week === game.week + 1 && (f.homeId === game.userClubId || f.awayId === game.userClubId));
       if (nextMatch) {
         const h = game.clubs.find(c => c.id === nextMatch.homeId)?.name || 'Home';
@@ -237,8 +587,7 @@
         pitch.appendChild(card);
       });
 
-      const bList = document.getElementById('bench-list');
-      bList.innerHTML = (game.bench || []).map(id => {
+      document.getElementById('bench-list').innerHTML = (game.bench || []).map(id => {
         const p = game.players.find(x => x.id === id);
         return p ? `<li><strong>${p.pos}</strong> ${p.name} (OVR: ${p.ovr})</li>` : '';
       }).join('');
@@ -247,8 +596,7 @@
     function renderTable(divId) {
       document.querySelectorAll('.pill').forEach((p, idx) => p.classList.toggle('active', idx + 1 === divId));
       const sorted = (game.clubs || []).filter(c => c.div === divId).sort((a,b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga));
-      const tbody = document.getElementById('table-body');
-      tbody.innerHTML = sorted.map((c, i) => `
+      document.getElementById('table-body').innerHTML = sorted.map((c, i) => `
         <tr class="${c.id === game.userClubId ? 'highlight' : ''}">
           <td>${i + 1}</td><td>${c.name}</td><td>${c.p}</td><td>${c.w}</td><td>${c.d}</td><td>${c.l}</td><td>${c.gf - c.ga}</td><td><strong>${c.pts}</strong></td>
         </tr>
@@ -257,8 +605,7 @@
 
     function renderTransfers() {
       const userPlayers = (game.players || []).filter(p => p.cid === game.userClubId);
-      const tbody = document.getElementById('transfer-body');
-      tbody.innerHTML = userPlayers.map(p => `
+      document.getElementById('transfer-body').innerHTML = userPlayers.map(p => `
         <tr>
           <td><strong>${p.name}</strong></td><td>${p.pos}</td><td>${p.age}</td>
           <td>${p.ovr}</td><td>${p.pot}</td><td>£${(p.val / 1000000).toFixed(2)}m</td><td>£${p.wage.toLocaleString()}</td>
@@ -287,6 +634,7 @@
       document.getElementById('tab-' + tabId).classList.add('active');
     }
 
+    // Launch
     startApplication();
   </script>
 </body>
