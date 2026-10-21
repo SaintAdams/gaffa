@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gaffer: The Football Manager</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Lightweight CSV Parser -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
@@ -13,14 +12,21 @@
   <div id="loading-overlay" class="loading-modal">
     <div class="modal-card">
       <h2>⚽ Loading Gaffer Football Manager...</h2>
-      <p id="loading-status">Reading Clubs.csv & InitPlayers.csv...</p>
+      <p id="loading-status" style="margin-top: 10px; color: #94a3b8;">Reading data...</p>
       
-      <!-- Fallback if opened directly via local file:// protocol -->
+      <!-- Local file fallback -->
       <div id="local-file-picker" style="display: none; margin-top: 15px;">
         <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">
           Opening directly on your local computer? Select both files:
         </p>
         <input type="file" id="csv-files-input" multiple accept=".csv" />
+      </div>
+
+      <!-- Emergency Reset Button -->
+      <div style="margin-top: 20px;">
+        <button onclick="clearAndReset()" style="background: #334155; color: #94a3b8; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">
+          Clear Cache & Hard Reset
+        </button>
       </div>
     </div>
   </div>
@@ -126,49 +132,61 @@
   <script>
     const game = new GafferGame();
 
-    async function startApplication() {
-      // 1. Try loading existing save
-      if (game.loadGame()) {
-        launchApp();
-        return;
-      }
+    function clearAndReset() {
+      localStorage.removeItem("gaffer_fm_save");
+      location.reload();
+    }
 
-      // 2. Try fetching Clubs.csv and InitPlayers.csv directly (Works on GitHub Pages)
+    async function startApplication() {
       try {
+        // 1. Try loading a valid existing save
+        if (game.loadGame()) {
+          launchApp();
+          return;
+        }
+
+        // 2. Fetch CSVs over network (GitHub Pages)
+        document.getElementById('loading-status').textContent = "Downloading 92 clubs & 2,676 players...";
         const [cRes, pRes] = await Promise.all([
-          fetch('Clubs.csv'),
-          fetch('InitPlayers.csv')
+          fetch('Clubs.csv?v=' + Date.now()),
+          fetch('InitPlayers.csv?v=' + Date.now())
         ]);
-        if (!cRes.ok || !pRes.ok) throw new Error("CSV Fetch failed");
+
+        if (!cRes.ok || !pRes.ok) {
+          throw new Error("Could not automatically fetch CSVs (HTTP " + cRes.status + "/" + pRes.status + ")");
+        }
+
         const cText = await cRes.text();
         const pText = await pRes.text();
         await game.loadFromCSVs(cText, pText);
         launchApp();
       } catch (err) {
-        // Fallback for double-clicking HTML locally
-        document.getElementById('loading-status').textContent = "Running locally? Please select Clubs.csv and InitPlayers.csv:";
+        console.error(err);
+        document.getElementById('loading-status').innerHTML = 
+          `<span style="color:#ef4444; font-weight:bold;">Error: ${err.message}</span><br>If running on your desktop, select both files below:`;
         document.getElementById('local-file-picker').style.display = "block";
       }
     }
 
-   // Local file input fallback handler
+    // Local file input fallback handler
     document.getElementById('csv-files-input').addEventListener('change', async (e) => {
       try {
         const files = Array.from(e.target.files);
         const cFile = files.find(f => f.name.toLowerCase().includes('club'));
         const pFile = files.find(f => f.name.toLowerCase().includes('player'));
         if (cFile && pFile) {
-          document.getElementById('loading-status').textContent = "Building 92-club database...";
+          document.getElementById('loading-status').textContent = "Parsing CSVs...";
           const cText = await cFile.text();
           const pText = await pFile.text();
           await game.loadFromCSVs(cText, pText);
           launchApp();
         } else {
-          alert("Please select both Clubs.csv and InitPlayers.csv (or Players.csv).");
+          alert("Please select both Clubs.csv and InitPlayers.csv");
         }
       } catch (err) {
         console.error(err);
-        alert("Error loading CSV files: " + err.message);
+        document.getElementById('loading-status').innerHTML = 
+          `<span style="color:#ef4444; font-weight:bold;">Error parsing files: ${err.message}</span>`;
       }
     });
 
@@ -179,6 +197,7 @@
     }
 
     function updateUI() {
+      if (!game.clubs || game.clubs.length === 0) return;
       const club = game.clubs.find(c => c.id === game.userClubId) || game.clubs[0];
       document.getElementById('user-club-name').textContent = club.name;
       document.getElementById('user-balance').textContent = `Bank: £${(game.bank / 1000000).toFixed(2)}m`;
@@ -186,13 +205,13 @@
 
       // Render News
       const feed = document.getElementById('news-feed');
-      feed.innerHTML = game.news.slice(0, 8).map(n => `<li>${n}</li>`).join('');
+      feed.innerHTML = (game.news || []).slice(0, 8).map(n => `<li>${n}</li>`).join('');
 
       // Render Next Match
-      const nextMatch = game.fixtures.find(f => f.week === game.week + 1 && (f.homeId === game.userClubId || f.awayId === game.userClubId));
+      const nextMatch = (game.fixtures || []).find(f => f.week === game.week + 1 && (f.homeId === game.userClubId || f.awayId === game.userClubId));
       if (nextMatch) {
-        const h = game.clubs.find(c => c.id === nextMatch.homeId).name;
-        const a = game.clubs.find(c => c.id === nextMatch.awayId).name;
+        const h = game.clubs.find(c => c.id === nextMatch.homeId)?.name || 'Home';
+        const a = game.clubs.find(c => c.id === nextMatch.awayId)?.name || 'Away';
         document.getElementById('next-fixture-card').innerHTML = `<strong>${h}</strong> vs <strong>${a}</strong>`;
       } else {
         document.getElementById('next-fixture-card').textContent = "Season Completed";
@@ -208,7 +227,7 @@
       pitch.innerHTML = '';
       const formDef = game.formations.find(f => f.name === game.currentFormation) || game.formations[0];
       
-      game.lineup.forEach((pId, idx) => {
+      (game.lineup || []).forEach((pId, idx) => {
         const player = game.players.find(p => p.id === pId);
         if (!player) return;
         const slot = formDef.slots[idx] || "CM";
@@ -219,7 +238,7 @@
       });
 
       const bList = document.getElementById('bench-list');
-      bList.innerHTML = game.bench.map(id => {
+      bList.innerHTML = (game.bench || []).map(id => {
         const p = game.players.find(x => x.id === id);
         return p ? `<li><strong>${p.pos}</strong> ${p.name} (OVR: ${p.ovr})</li>` : '';
       }).join('');
@@ -227,7 +246,7 @@
 
     function renderTable(divId) {
       document.querySelectorAll('.pill').forEach((p, idx) => p.classList.toggle('active', idx + 1 === divId));
-      const sorted = game.clubs.filter(c => c.div === divId).sort((a,b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga));
+      const sorted = (game.clubs || []).filter(c => c.div === divId).sort((a,b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga));
       const tbody = document.getElementById('table-body');
       tbody.innerHTML = sorted.map((c, i) => `
         <tr class="${c.id === game.userClubId ? 'highlight' : ''}">
@@ -237,7 +256,7 @@
     }
 
     function renderTransfers() {
-      const userPlayers = game.players.filter(p => p.cid === game.userClubId);
+      const userPlayers = (game.players || []).filter(p => p.cid === game.userClubId);
       const tbody = document.getElementById('transfer-body');
       tbody.innerHTML = userPlayers.map(p => `
         <tr>
