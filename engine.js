@@ -85,43 +85,52 @@ class GafferGame {
   }
 
   async loadFromCSVs(clubsCSVText, playersCSVText) {
+    // Strip hidden Excel UTF-8 BOM if present
+    clubsCSVText = clubsCSVText.replace(/^\uFEFF/, '');
+    playersCSVText = playersCSVText.replace(/^\uFEFF/, '');
+
     const rawClubs = Papa.parse(clubsCSVText, { header: true, skipEmptyLines: true }).data;
     const rawPlayers = Papa.parse(playersCSVText, { header: true, skipEmptyLines: true }).data;
 
-    this.clubs = rawClubs.map(r => ({
-      id: cleanNumber(r['ID']),
-      name: r['Club'] ? r['Club'].trim() : '',
-      div: cleanNumber(r['Division (1 PL, 2 Champ, 3 L1, 4 L2)']),
-      budget: cleanNumber(r['Init budget']),
-      wageBudget: cleanNumber(r['Wage budget /wk']),
-      formation: r['Formation'] ? r['Formation'].trim() : '4-4-2',
-      last: r['Init last'] || 'PL 1st',
-      capacity: cleanNumber(r['Stadium capacity']),
-      usualAtt: cleanNumber(r['Init attendance']),
-      p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0
-    })).filter(c => c.id > 0);
+    this.clubs = rawClubs.map(r => {
+      const id = cleanNumber(r['ID'] || r['\ufeffID']);
+      return {
+        id: id,
+        name: r['Club'] ? r['Club'].trim() : '',
+        div: cleanNumber(r['Division (1 PL, 2 Champ, 3 L1, 4 L2)']),
+        budget: cleanNumber(r['Init budget']),
+        wageBudget: cleanNumber(r['Wage budget /wk']),
+        formation: r['Formation'] ? r['Formation'].trim() : '4-4-2',
+        last: r['Init last'] || 'PL 1st',
+        capacity: cleanNumber(r['Stadium capacity']),
+        usualAtt: cleanNumber(r['Init attendance']),
+        p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0
+      };
+    }).filter(c => c.id > 0);
 
-    this.players = rawPlayers.map(r => ({
-      id: cleanNumber(r['ID']),
-      name: r['Player'] ? r['Player'].trim() : '',
-      club: r['Club'] ? r['Club'].trim() : 'Free Agent',
-      cid: cleanNumber(r['Club ID']),
-      pos: r['Pos'] ? r['Pos'].trim() : 'CM',
-      pos2: r['Pos2'] ? r['Pos2'].trim() : '',
-      age: cleanNumber(r['Age']) || 20,
-      ovr: cleanNumber(r['OVR']) || 60,
-      gk: cleanNumber(r['GK']), def: cleanNumber(r['DEF']), pas: cleanNumber(r['PAS']),
-      att: cleanNumber(r['ATT']), pac: cleanNumber(r['PAC']), phy: cleanNumber(r['PHY']),
-      pot: cleanNumber(r['POT']) || 65,
-      val: cleanNumber(r['Value']),
-      wage: cleanNumber(r['Wage /wk']),
-      inj: 0, apps: 0, gls: 0, ast: 0, lastR: 0, rsum: 0,
-      loan: "", lpct: 0, par: 0, peak: cleanNumber(r['OVR']), regen: ""
-    })).filter(p => p.id > 0);
+    this.players = rawPlayers.map(r => {
+      const id = cleanNumber(r['ID'] || r['\ufeffID']);
+      return {
+        id: id,
+        name: r['Player'] ? r['Player'].trim() : '',
+        club: r['Club'] ? r['Club'].trim() : 'Free Agent',
+        cid: cleanNumber(r['Club ID']),
+        pos: r['Pos'] ? r['Pos'].trim() : 'CM',
+        pos2: r['Pos2'] ? r['Pos2'].trim() : '',
+        age: cleanNumber(r['Age']) || 20,
+        ovr: cleanNumber(r['OVR']) || 60,
+        gk: cleanNumber(r['GK']), def: cleanNumber(r['DEF']), pas: cleanNumber(r['PAS']),
+        att: cleanNumber(r['ATT']), pac: cleanNumber(r['PAC']), phy: cleanNumber(r['PHY']),
+        pot: cleanNumber(r['POT']) || 65,
+        val: cleanNumber(r['Value']),
+        wage: cleanNumber(r['Wage /wk']),
+        inj: 0, apps: 0, gls: 0, ast: 0, lastR: 0, rsum: 0,
+        loan: "", lpct: 0, par: 0, peak: cleanNumber(r['OVR']), regen: ""
+      };
+    }).filter(p => p.id > 0);
 
     this.initSeason();
   }
-
   initSeason() {
     this.generateDoubleRoundRobin();
     this.autoPickLineup(this.userClubId);
